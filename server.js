@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 5000;
 // =======================
 app.use(helmet());
 app.use(cors({
-  origin: "https://www.vietportfolio.work.gd",
+  origin: "https://www.vietportfolio.work.gd", // your frontend
   credentials: true
 }));
 app.use(express.json());
@@ -38,11 +38,11 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // =======================
-// 🗄️ PostgreSQL Connection (for Contact Form)
+// 🗄️ PostgreSQL Connection (Contact Form only)
 // =======================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: false, // Internal Render DB does not require SSL
+  ssl: { rejectUnauthorized: false }, // required for Render hosted DB
 });
 
 pool.connect()
@@ -50,7 +50,7 @@ pool.connect()
   .catch((err) => console.error("❌ Database connection error:", err));
 
 // =======================
-// 🗄️ Supabase Connection (for Admin Auth)
+// 🗄️ Supabase Connection (Admin Auth only)
 // =======================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -129,7 +129,7 @@ app.post("/api/contact", async (req, res) => {
           MESSAGE: message,
           TIMESTAMP: contactTimestamp,
         },
-        listIds: [4],
+        listIds: [4], // your Brevo list ID
         updateEnabled: true,
       }),
     });
@@ -266,5 +266,4 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// Export PostgreSQL pool if needed elsewhere
-export { pool };
+export { pool }; // PostgreSQL pool for contact form only
