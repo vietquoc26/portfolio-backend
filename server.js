@@ -6,14 +6,12 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
-import pkg from "pg";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
-const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -36,18 +34,6 @@ const limiter = rateLimit({
   legacyHeaders: false
 });
 app.use(limiter);
-
-// =======================
-// 🗄️ PostgreSQL Connection (Contact Form only)
-// =======================
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // required for Render hosted DB
-});
-
-pool.connect()
-  .then(() => console.log("✅ Connected to PostgreSQL on Render"))
-  .catch((err) => console.error("❌ Database connection error:", err));
 
 // =======================
 // 🗄️ Supabase Connection (Admin Auth only)
@@ -100,18 +86,6 @@ app.post("/api/contact", async (req, res) => {
     }
 
     const contactTimestamp = timestamp || new Date().toISOString();
-
-    // Save to PostgreSQL
-    try {
-      await pool.query(
-        `INSERT INTO contacts (name, email, phone, message, created_at) 
-         VALUES ($1, $2, $3, $4, $5)`,
-        [name, email, phone || "", message, contactTimestamp]
-      );
-      console.log("✅ Contact saved to PostgreSQL");
-    } catch (dbErr) {
-      console.error("❌ DB Insert Error:", dbErr);
-    }
 
     // Send to Brevo
     const response = await fetch("https://api.brevo.com/v3/contacts", {
@@ -256,7 +230,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 // 📌 Base Route
 // =======================
 app.get("/", (req, res) => {
-  res.send("✅ Backend is running: Contact + Admin Auth ready!");
+  res.send("✅ Backend is running: Brevo Contact + Supabase Admin Auth ready!");
 });
 
 // =======================
@@ -265,5 +239,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-export { pool }; // PostgreSQL pool for contact form only
