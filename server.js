@@ -1,17 +1,19 @@
 // server.js
 import express from "express";
 import cors from "cors";
+import fetch from "node-fetch";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
+import pkg from "pg";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
-import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
+const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -19,18 +21,36 @@ const PORT = process.env.PORT || 5000;
 // 🛡️ Middleware
 // =======================
 app.use(helmet());
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors({
+  origin: "https://www.vietportfolio.work.gd",
+  credentials: true
+}));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 app.use(limiter);
 
 // =======================
-// 🗄️ Supabase Connection
+// 🗄️ PostgreSQL Connection (for Contact Form)
+// =======================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: false, // Internal Render DB does not require SSL
+});
+
+pool.connect()
+  .then(() => console.log("✅ Connected to PostgreSQL on Render"))
+  .catch((err) => console.error("❌ Database connection error:", err));
+
+// =======================
+// 🗄️ Supabase Connection (for Admin Auth)
 // =======================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -66,7 +86,76 @@ async function sendEmail(to, subject, text) {
 }
 
 // =======================
-// 🔑 Auth Routes
+// 📩 Contact Form Route
+// =======================
+app.post("/api/contact", async (req, res) => {
+  try {
+    const { name, email, phone, message, timestamp } = req.body;
+
+    if (!name || !email || !message) {
+      return res.status(400).json({
+        success: false,
+        error: "Name, Email, and Message are required.",
+      });
+    }
+
+    const contactTimestamp = timestamp || new Date().toISOString();
+
+    // Save to PostgreSQL
+    try {
+      await pool.query(
+        `INSERT INTO contacts (name, email, phone, message, created_at) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [name, email, phone || "", message, contactTimestamp]
+      );
+      console.log("✅ Contact saved to PostgreSQL");
+    } catch (dbErr) {
+      console.error("❌ DB Insert Error:", dbErr);
+    }
+
+    // Send to Brevo
+    const response = await fetch("https://api.brevo.com/v3/contacts", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "api-key": process.env.BREVO_API_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        attributes: {
+          NAME: name,
+          PHONE: phone || "",
+          MESSAGE: message,
+          TIMESTAMP: contactTimestamp,
+        },
+        listIds: [5],
+        updateEnabled: true,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Brevo API Error:", data);
+      return res.status(response.status).json({
+        success: false,
+        error: data.message || "Failed to add contact to Brevo",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error("Server Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error. Please try again later.",
+    });
+  }
+});
+
+// =======================
+// 🔑 Admin Auth Routes (Supabase)
 // =======================
 
 // Register Admin
@@ -74,7 +163,6 @@ app.post("/api/auth/register", async (req, res) => {
   const { username, email, password, role = "admin" } = req.body;
 
   try {
-    // Check if user already exists
     const { data: existingUser } = await supabase
       .from("admins")
       .select("*")
@@ -85,10 +173,8 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ message: "Username already exists" });
     }
 
-    // Hash password
     const hashedPassword = await bcryptjs.hash(password, 10);
 
-    // Insert into Supabase
     await supabase.from("admins").insert([
       { username, email, password: hashedPassword, role },
     ]);
@@ -170,12 +256,15 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 // 📌 Base Route
 // =======================
 app.get("/", (req, res) => {
-  res.send("🚀 VietPortfolio Backend is running");
+  res.send("✅ Backend is running: Contact + Admin Auth ready!");
 });
 
 // =======================
 // 🚦 Start Server
 // =======================
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
+
+// Export PostgreSQL pool if needed elsewhere
+export { pool };
