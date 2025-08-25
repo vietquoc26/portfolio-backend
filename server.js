@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 5000;
 // =======================
 app.use(helmet());
 app.use(cors({
-  origin: "https://www.vietportfolio.work.gd", // your frontend
+  origin: "https://www.vietportfolio.work.gd",
   credentials: true
 }));
 app.use(express.json());
@@ -103,7 +103,7 @@ app.post("/api/contact", async (req, res) => {
           MESSAGE: message,
           TIMESTAMP: contactTimestamp,
         },
-        listIds: [4], // your Brevo list ID
+        listIds: [4],
         updateEnabled: true,
       }),
     });
@@ -187,10 +187,27 @@ app.post("/api/auth/login", async (req, res) => {
       { expiresIn: "1h" }
     );
 
-    res.json({ token });
+    res.json({ token, user: { id: admin.id, username: admin.username, role: admin.role } });
   } catch (err) {
     console.error("❌ Login error:", err.message);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Verify JWT
+app.get("/api/auth/verify", (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) return res.status(401).json({ message: "No token provided" });
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    res.json({ valid: true, user: decoded });
+  } catch (err) {
+    console.error("❌ Token verification failed:", err.message);
+    res.status(401).json({ message: "Invalid token" });
   }
 });
 
@@ -205,9 +222,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       .eq("email", email)
       .single();
 
-    if (!admin) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!admin) return res.status(404).json({ message: "User not found" });
 
     const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, {
       expiresIn: "15m",
