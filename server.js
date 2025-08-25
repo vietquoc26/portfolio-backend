@@ -129,7 +129,7 @@ app.post("/api/contact", async (req, res) => {
           MESSAGE: message,
           TIMESTAMP: contactTimestamp,
         },
-        listIds: [5],
+        listIds: [4],
         updateEnabled: true,
       }),
     });
