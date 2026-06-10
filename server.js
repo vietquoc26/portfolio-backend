@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 5000;
 // =======================
 app.use(helmet());
 app.use(cors({
-  origin: "https://www.vietportfolio.com",
+  origin: "https://vietportfolio.com",
   credentials: true
 }));
 app.use(express.json());
